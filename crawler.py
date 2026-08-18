@@ -1,8 +1,7 @@
 import cloudscraper
-import pandas as pd
+from bs4 import BeautifulSoup
 import json
 import re
-import io
 
 def fetch_data():
     raw_data = []
@@ -17,64 +16,74 @@ def fetch_data():
         res.encoding = "utf-8"
 
         if res.status_code == 200:
-            # 讀取網頁中所有表格
-            dfs = pd.read_html(io.StringIO(res.text))
-            
-            target_df = None
-            for df in dfs:
-                # 若標頭為多重層級 (MultiIndex)，將其展平為單一層級字串
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = ['_'.join([str(c) for c in col if 'Unnamed' not in str(c)]).strip() for col in df.columns]
-                else:
-                    df.columns = [str(c).strip() for c in df.columns]
+            soup = BeautifulSoup(res.text, "html.parser")
+            tables = soup.find_all("table")
 
-                # 尋找含有股票代號欄位的表格
-                cols_str = "".join(df.columns)
-                if "代號" in cols_str or "代碼" in cols_str or "名稱" in cols_str:
-                    target_df = df
+            target_table = None
+            for table in tables:
+                text = table.get_text()
+                if "紀念品" in text and ("代號" in text or "代碼" in text):
+                    target_table = table
                     break
 
-            if target_df is not None:
-                # 自動對應欄位名稱
-                code_col = [c for c in target_df.columns if "代號" in c or "代碼" in c][0]
-                name_col = [c for c in target_df.columns if "名稱" in c][0]
-                gift_col = [c for c in target_df.columns if "紀念品" in c][0]
+            if target_table:
+                rows = target_table.find_all("tr")
                 
-                price_cols = [c for c in target_df.columns if "股價" in c or "價格" in c]
-                price_col = price_cols[0] if price_cols else None
-                
-                last_buy_cols = [c for c in target_df.columns if "最後" in c or "買進" in c]
-                last_buy_col = last_buy_cols[0] if last_buy_cols else None
-                
-                cond_cols = [c for c in target_df.columns if "條件" in c or "零股" in c or "發放" in c]
-                cond_col = cond_cols[0] if cond_cols else None
+                # 自動尋找表頭欄位索引
+                header_idx = {}
+                for row in rows:
+                    th_cols = [th.text.strip() for th in row.find_all(["th", "td"])]
+                    if any("紀念品" in c for c in th_cols):
+                        for i, col_name in enumerate(th_cols):
+                            if "代號" in col_name or "代碼" in col_name:
+                                header_idx["code"] = i
+                            elif "名稱" in col_name:
+                                header_idx["name"] = i
+                            elif "紀念品" in col_name:
+                                header_idx["gift"] = i
+                            elif "股價" in col_name or "價格" in col_name:
+                                header_idx["price"] = i
+                            elif "最後" in col_name or "買進" in col_name:
+                                header_idx["last_buy"] = i
+                            elif "條件" in col_name or "零股" in col_name or "發放" in col_name:
+                                header_idx["cond"] = i
+                        break
 
-                for _, row in target_df.iterrows():
-                    code = str(row[code_col]).strip()
-                    # 確保股票代號為 4 位數字
-                    if re.match(r"^\d{4}$", code):
-                        name = str(row[name_col]).strip()
-                        gift = str(row[gift_col]).strip()
-                        
-                        price = 0.0
-                        if price_col and pd.notna(row[price_col]):
-                            p_str = re.sub(r"[^\d.]", "", str(row[price_col]))
+                # 預設索引備案（若無表頭）
+                idx_code = header_idx.get("code", 0)
+                idx_name = header_idx.get("name", 1)
+                idx_price = header_idx.get("price", 2)
+                idx_gift = header_idx.get("gift", 3)
+                idx_last_buy = header_idx.get("last_buy", 4)
+                idx_cond = header_idx.get("cond", 5)
+
+                for row in rows:
+                    tds = [td.text.strip() for td in row.find_all("td")]
+                    if len(tds) > max(idx_code, idx_name, idx_gift):
+                        code = tds[idx_code]
+                        if re.match(r"^\d{4}$", code):
+                            name = tds[idx_name]
+                            gift = tds[idx_gift]
+
+                            # 處理股價
+                            price_val = tds[idx_price] if len(tds) > idx_price else "0"
+                            p_str = re.sub(r"[^\d.]", "", price_val)
                             price = float(p_str) if p_str else 0.0
 
-                        last_buy = str(row[last_buy_col]).strip() if last_buy_col and pd.notna(row[last_buy_col]) else "依公告處理"
-                        cond = str(row[cond_col]).strip() if cond_col and pd.notna(row[cond_col]) else "完成電子投票即可"
+                            last_buy = tds[idx_last_buy] if len(tds) > idx_last_buy else "依公告處理"
+                            cond = tds[idx_cond] if len(tds) > idx_cond else "完成電子投票即可"
 
-                        # 過濾無紀念品/無效資料
-                        if gift and gift != "nan" and not any(k in gift for k in ["無紀念品", "不發放", "無", "尚未公佈", "尚無"]):
-                            raw_data.append({
-                                "股票代碼": code,
-                                "股票名稱": name,
-                                "當前股價": price,
-                                "買1股成本": round(price + 1, 1),
-                                "紀念品": gift,
-                                "最後買進日": last_buy,
-                                "零股條件": cond
-                            })
+                            # 確保紀念品不是無效數值
+                            if gift and not any(k in gift for k in ["無紀念品", "不發放", "尚未公佈", "尚無"]):
+                                raw_data.append({
+                                    "股票代碼": code,
+                                    "股票名稱": name,
+                                    "當前股價": price,
+                                    "買1股成本": round(price + 1, 1),
+                                    "紀念品": gift,
+                                    "最後買進日": last_buy,
+                                    "零股條件": cond
+                                })
 
     except Exception as e:
         print(f"爬取發生例外狀況: {e}")
