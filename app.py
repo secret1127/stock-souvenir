@@ -24,6 +24,11 @@ if not data:
 else:
     df = pd.DataFrame(data)
 
+    # 確保欄位存在，若不存在則補空字串
+    for col in ["零股條件", "紀念品", "備註", "股票代碼", "股票名稱"]:
+        if col not in df.columns:
+            df[col] = ""
+
     # 側邊欄篩選區
     st.sidebar.header("🔍 篩選與搜尋")
     
@@ -46,9 +51,9 @@ else:
 
     # 建立全文字段以利比對身分證條件
     text_corpus = (
-        filtered_df.get("零股條件", "").astype(str) + " " +
-        filtered_df.get("紀念品", "").astype(str) + " " +
-        filtered_df.get("備註", "").astype(str)
+        filtered_df["零股條件"].fillna("").astype(str) + " " +
+        filtered_df["紀念品"].fillna("").astype(str) + " " +
+        filtered_df["備註"].fillna("").astype(str)
     )
 
     # 身分證件需求過濾邏輯
@@ -80,14 +85,14 @@ else:
 
     # 計算統計金額（轉為數值型態計算）
     total_count = len(filtered_df)
-    stock_prices = pd.to_numeric(filtered_df.get("當前股價", 0), errors='coerce').fillna(0)
-    cost_1share = pd.to_numeric(filtered_df.get("買1股成本", 0), errors='coerce').fillna(0)
+    stock_prices = pd.to_numeric(filtered_df["當前股價"] if "當前股價" in filtered_df.columns else 0, errors='coerce').fillna(0)
+    cost_1share = pd.to_numeric(filtered_df["買1股成本"] if "買1股成本" in filtered_df.columns else 0, errors='coerce').fillna(0)
     
     total_stock_price = stock_prices.sum()
     total_cost_1share = cost_1share.sum()
     avg_cost = (total_cost_1share / total_count) if total_count > 0 else 0
 
-    # 顯示頂部統計資訊卡片（完整整數顯示）
+    # 顯示頂部統計資訊卡片
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("符合條件檔數", f"{total_count:,} 檔")
     col2.metric("股價合計", f"${int(total_stock_price):,} 元")
