@@ -17,39 +17,45 @@ def fetch_data():
         res.encoding = "utf-8"
 
         if res.status_code == 200:
-            # 使用 pandas 直接把網頁的所有 table 讀進來
+            # 讀取網頁中所有表格
             dfs = pd.read_html(io.StringIO(res.text))
             
-            # 找到包含股票代號的那個表格
             target_df = None
             for df in dfs:
-                df.columns = [str(c).strip() for c in df.columns]
-                # 印出欄位名稱方便偵測 Log
-                print("找到表格欄位:", list(df.columns))
-                if any("代號" in str(c) or "代碼" in str(c) for c in df.columns):
+                # 若標頭為多重層級 (MultiIndex)，將其展平為單一層級字串
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = ['_'.join([str(c) for c in col if 'Unnamed' not in str(c)]).strip() for col in df.columns]
+                else:
+                    df.columns = [str(c).strip() for c in df.columns]
+
+                # 尋找含有股票代號欄位的表格
+                cols_str = "".join(df.columns)
+                if "代號" in cols_str or "代碼" in cols_str or "名稱" in cols_str:
                     target_df = df
                     break
 
             if target_df is not None:
-                # 重新整理欄位名稱
+                # 自動對應欄位名稱
                 code_col = [c for c in target_df.columns if "代號" in c or "代碼" in c][0]
                 name_col = [c for c in target_df.columns if "名稱" in c][0]
                 gift_col = [c for c in target_df.columns if "紀念品" in c][0]
-                price_col = [c for c in target_df.columns if "股價" in c or "價格" in c]
-                price_col = price_col[0] if price_col else None
-                last_buy_col = [c for c in target_df.columns if "最後" in c or "買進" in c]
-                last_buy_col = last_buy_col[0] if last_buy_col else None
-                cond_col = [c for c in target_df.columns if "條件" in c or "零股" in c or "發放" in c]
-                cond_col = cond_col[0] if cond_col else None
+                
+                price_cols = [c for c in target_df.columns if "股價" in c or "價格" in c]
+                price_col = price_cols[0] if price_cols else None
+                
+                last_buy_cols = [c for c in target_df.columns if "最後" in c or "買進" in c]
+                last_buy_col = last_buy_cols[0] if last_buy_cols else None
+                
+                cond_cols = [c for c in target_df.columns if "條件" in c or "零股" in c or "發放" in c]
+                cond_col = cond_cols[0] if cond_cols else None
 
                 for _, row in target_df.iterrows():
                     code = str(row[code_col]).strip()
-                    # 確保股票代號是 4 位數字
+                    # 確保股票代號為 4 位數字
                     if re.match(r"^\d{4}$", code):
                         name = str(row[name_col]).strip()
                         gift = str(row[gift_col]).strip()
                         
-                        # 股價處理
                         price = 0.0
                         if price_col and pd.notna(row[price_col]):
                             p_str = re.sub(r"[^\d.]", "", str(row[price_col]))
@@ -58,7 +64,7 @@ def fetch_data():
                         last_buy = str(row[last_buy_col]).strip() if last_buy_col and pd.notna(row[last_buy_col]) else "依公告處理"
                         cond = str(row[cond_col]).strip() if cond_col and pd.notna(row[cond_col]) else "完成電子投票即可"
 
-                        # 過濾無紀念品之無效資料
+                        # 過濾無紀念品/無效資料
                         if gift and gift != "nan" and not any(k in gift for k in ["無紀念品", "不發放", "無", "尚未公佈", "尚無"]):
                             raw_data.append({
                                 "股票代碼": code,
