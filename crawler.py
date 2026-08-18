@@ -21,46 +21,53 @@ def fetch_data():
 
             for row in rows:
                 cols = [td.text.strip() for td in row.find_all(["td", "th"])]
-                if len(cols) >= 4:
+                
+                # 確保是股票資料列（第一欄為4位數股票代號）
+                if len(cols) >= 4 and re.match(r"^\d{4}$", cols[0]):
                     code = cols[0]
-                    if re.match(r"^\d{4}$", code):
-                        name = cols[1] if len(cols) > 1 else ""
-                        price_str = re.sub(r"[^\d.]", "", cols[2]) if len(cols) > 2 else "0"
-                        price = float(price_str) if price_str else 0.0
-                        
-                        gift = ""
-                        last_buy = "依公告處理"
-                        cond = "完成電子投票即可"
+                    name = cols[1] if len(cols) > 1 else ""
+                    
+                    # 股價處理
+                    price_str = re.sub(r"[^\d.]", "", cols[2]) if len(cols) > 2 else "0"
+                    price = float(price_str) if price_str else 0.0
 
-                        # 解析欄位內容
-                        for val in cols[3:]:
-                            if re.search(r"\d{1,2}/\d{1,2}", val):
-                                if last_buy == "依公告處理":
-                                    last_buy = val
-                            elif any(k in val for k in ["親自", "電子", "投票", "限", "發放", "不限"]):
-                                cond = val
-                            elif not gift and val and val not in ["常會", "臨時會"]:
+                    gift = ""
+                    last_buy = "依公告處理"
+                    cond = "完成電子投票即可"
+
+                    # 針對剩餘欄位進行類型判斷，避免欄位錯位
+                    for val in cols[3:]:
+                        if not val:
+                            continue
+                        # 1. 判斷是否為日期 (例如 04/28)
+                        if re.search(r"\d{1,2}/\d{1,2}", val):
+                            if last_buy == "依公告處理":
+                                last_buy = val
+                        # 2. 判斷是否為投票/零股條件
+                        elif any(k in val for k in ["親自", "電子", "投票", "限", "發放", "不限"]):
+                            cond = val
+                        # 3. 排除開會類型後，其餘長度合理的文字視為真正的紀念品名稱
+                        elif val not in ["常會", "臨時會"] and len(val) >= 2:
+                            if not gift:
                                 gift = val
 
-                        if gift and not any(k in gift for k in ["無紀念品", "不發放", "無", "尚未公佈", "尚無"]):
-                            raw_data.append({
-                                "股票代碼": code,
-                                "股票名稱": name,
-                                "當前股價": price,
-                                "買1股成本": round(price + 1, 1),
-                                "紀念品": gift,
-                                "最後買進日": last_buy,
-                                "零股條件": cond
-                            })
-        else:
-            print(f"請求失敗，Status Code: {res.status_code}")
+                    # 過濾無紀念品之資料
+                    if gift and not any(k in gift for k in ["無紀念品", "不發放", "無", "尚未公佈", "尚無"]):
+                        raw_data.append({
+                            "股票代碼": code,
+                            "股票名稱": name,
+                            "當前股價": price,
+                            "買1股成本": round(price + 1, 1),
+                            "紀念品": gift,
+                            "最後買進日": last_buy,
+                            "零股條件": cond
+                        })
 
     except Exception as e:
         print(f"爬取發生例外狀況: {e}")
 
-    # 防空機制：若沒抓到資料則不蓋掉原本資料
     if len(raw_data) == 0:
-        print("⚠️ 未抓取到任何資料，取消寫入 data.json！")
+        print("⚠️ 未抓取到任何資料，取消寫入！")
         return
 
     # 去重
