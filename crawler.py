@@ -13,11 +13,13 @@ def fetch_data():
         url = "https://histock.tw/stock/gift.aspx"
         print(f"開始抓取全台紀念品清單: {url}")
         res = scraper.get(url, timeout=15)
+        print(f"伺服器回應狀態碼: {res.status_code}")
         res.encoding = "utf-8"
 
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             tables = soup.find_all("table")
+            print(f"頁面中共找到 {len(tables)} 個表格")
 
             target_table = None
             for table in tables:
@@ -28,8 +30,8 @@ def fetch_data():
 
             if target_table:
                 rows = target_table.find_all("tr")
+                print(f"目標表格共有 {len(rows)} 行")
                 
-                # 自動尋找表頭欄位索引
                 header_idx = {}
                 for row in rows:
                     th_cols = [th.text.strip() for th in row.find_all(["th", "td"])]
@@ -49,7 +51,6 @@ def fetch_data():
                                 header_idx["cond"] = i
                         break
 
-                # 預設索引備案（若無表頭）
                 idx_code = header_idx.get("code", 0)
                 idx_name = header_idx.get("name", 1)
                 idx_price = header_idx.get("price", 2)
@@ -65,7 +66,6 @@ def fetch_data():
                             name = tds[idx_name]
                             gift = tds[idx_gift]
 
-                            # 處理股價
                             price_val = tds[idx_price] if len(tds) > idx_price else "0"
                             p_str = re.sub(r"[^\d.]", "", price_val)
                             price = float(p_str) if p_str else 0.0
@@ -73,7 +73,6 @@ def fetch_data():
                             last_buy = tds[idx_last_buy] if len(tds) > idx_last_buy else "依公告處理"
                             cond = tds[idx_cond] if len(tds) > idx_cond else "完成電子投票即可"
 
-                            # 確保紀念品不是無效數值
                             if gift and not any(k in gift for k in ["無紀念品", "不發放", "尚未公佈", "尚無"]):
                                 raw_data.append({
                                     "股票代碼": code,
@@ -84,23 +83,27 @@ def fetch_data():
                                     "最後買進日": last_buy,
                                     "零股條件": cond
                                 })
+            else:
+                print("⚠️ 警告：找不到目標表格，可能被 Cloudflare 攔截或 HTML 結構變更。")
+        else:
+            print(f"⚠️ 請求失敗，狀態碼非 200: {res.status_code}")
 
     except Exception as e:
-        print(f"爬取發生例外狀況: {e}")
+        print(f"❌ 爬取發生例外狀況: {e}")
+        import traceback
+        traceback.print_exc()
 
     if len(raw_data) == 0:
-        print("⚠️ 未抓取到任何資料，取消寫入！")
+        print("⚠️ 未抓取到任何資料，取消寫入，保留原本的 data.json！")
         return
 
-    # 去重
     unique_data = {item["股票代碼"]: item for item in raw_data}
     final_list = list(unique_data.values())
 
-    # 寫入 json
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(final_list, f, ensure_ascii=False, indent=4)
 
-    print(f"成功寫入 {len(final_list)} 檔紀念品股票至 data.json！")
+    print(f"✅ 成功寫入 {len(final_list)} 檔紀念品股票至 data.json！")
 
 if __name__ == "__main__":
     fetch_data()
