@@ -44,14 +44,22 @@ else:
 
     filtered_df = df.copy()
 
-    # 身分證件需求過濾
+    # 建立全文字段以利比對身分證條件
+    text_corpus = (
+        filtered_df.get("零股條件", "").astype(str) + " " +
+        filtered_df.get("紀念品", "").astype(str) + " " +
+        filtered_df.get("備註", "").astype(str)
+    )
+
+    # 身分證件需求過濾邏輯
     id_pattern = r"(正本|影本|印本|檢附|身分證|證件)"
+    
     if exclude_id_req or id_req_filter == "免身分證件（排除需正/影本）":
-        filtered_df = filtered_df[~filtered_df["零股條件"].astype(str).str.contains(id_pattern, flags=re.IGNORECASE, na=False)]
+        filtered_df = filtered_df[~text_corpus.str.contains(id_pattern, flags=re.IGNORECASE, na=False)]
     elif id_req_filter == "需身分證正本":
-        filtered_df = filtered_df[filtered_df["零股條件"].astype(str).str.contains(r"(正本|檢附正本|核對正本)", flags=re.IGNORECASE, na=False)]
+        filtered_df = filtered_df[text_corpus.str.contains(r"(正本|核對正本)", flags=re.IGNORECASE, na=False)]
     elif id_req_filter == "需身分證影本":
-        filtered_df = filtered_df[filtered_df["零股條件"].astype(str).str.contains(r"(影本|印本|檢附影本)", flags=re.IGNORECASE, na=False)]
+        filtered_df = filtered_df[text_corpus.str.contains(r"(影本|印本)", flags=re.IGNORECASE, na=False)]
 
     # 關鍵字過濾
     if search_keyword:
@@ -70,17 +78,21 @@ else:
     if filter_odd_lots:
         filtered_df = filtered_df[filtered_df["零股條件"].astype(str).str.contains(r"(電子|投票|即可|可|不限|同意)", flags=re.IGNORECASE, na=False)]
 
-    # 計算統計金額
+    # 計算統計金額（轉為數值型態計算）
     total_count = len(filtered_df)
-    total_stock_price = filtered_df["當前股價"].sum() if "當前股價" in filtered_df.columns else 0
-    total_cost_1share = filtered_df["買1股成本"].sum() if "買1股成本" in filtered_df.columns else 0
+    stock_prices = pd.to_numeric(filtered_df.get("當前股價", 0), errors='coerce').fillna(0)
+    cost_1share = pd.to_numeric(filtered_df.get("買1股成本", 0), errors='coerce').fillna(0)
+    
+    total_stock_price = stock_prices.sum()
+    total_cost_1share = cost_1share.sum()
+    avg_cost = (total_cost_1share / total_count) if total_count > 0 else 0
 
-    # 顯示頂部統計資訊卡片
+    # 顯示頂部統計資訊卡片（完整整數顯示）
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("符合條件檔數", f"{total_count} 檔")
-    col2.metric("股價合計", f"${total_stock_price:,.2f} 元")
-    col3.metric("買1股總成本", f"${total_cost_1share:,.2f} 元")
-    col4.metric("平均每股成本", f"${(total_cost_1share / total_count):,.2f} 元" if total_count > 0 else "$0 元")
+    col1.metric("符合條件檔數", f"{total_count:,} 檔")
+    col2.metric("股價合計", f"${int(total_stock_price):,} 元")
+    col3.metric("買1股總成本", f"${int(total_cost_1share):,} 元")
+    col4.metric("平均每股成本", f"${avg_cost:.2f} 元")
 
     st.markdown("---")
 
