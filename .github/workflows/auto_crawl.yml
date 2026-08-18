@@ -1,0 +1,35 @@
+name: Daily Stock Souvenir Crawler
+
+on:
+  schedule:
+    # 每天台灣時間晚上 8 點 (UTC 12:00) 自動執行
+    - cron: '0 12 * * *'
+  workflow_dispatch: # 支援在 GitHub 頁面上手動點擊執行
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install beautifulsoup4
+
+      - name: Run Crawler
+        run: python crawler.py
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git commit -m "Auto update souvenir data" || exit 0
+          git push
