@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import re
 
 st.set_page_config(page_title="全台股東會紀念品查詢系統", layout="wide", page_icon="🎁")
 
@@ -44,15 +45,15 @@ else:
             filtered_df["紀念品"].astype(str).str.contains(search_keyword, case=False, na=False)
         ]
 
-    # 商品禮券 / 卡 過濾
+    # 商品禮券 / 卡 過濾（超寬鬆匹配）
     if filter_gift_card:
-        keywords = ["禮券", "商品卡", "禮卡", "7-11", "全家", "7-ELEVEN", "超商", "商品券", "卡", "券", "莫凡彼", "星巴克"]
-        pattern = "|".join(keywords)
-        filtered_df = filtered_df[filtered_df["紀念品"].astype(str).str.contains(pattern, case=False, na=False)]
+        # 只要紀念品包含以下任何一個字（包含卡、券、7-11、全家、7-ELEVEN、全聯等）
+        pattern = r"(禮券|商品卡|禮卡|7-11|7-Eleven|全家|超商|商品券|卡|券|全聯|莫凡彼|星巴克|提貨券)"
+        filtered_df = filtered_df[filtered_df["紀念品"].astype(str).str.contains(pattern, flags=re.IGNORECASE, na=False)]
 
     # 零股條件過濾
     if filter_odd_lots:
-        filtered_df = filtered_df[filtered_df["零股條件"].astype(str).str.contains("電子|投票|即可|可|不限", case=False, na=False)]
+        filtered_df = filtered_df[filtered_df["零股條件"].astype(str).str.contains(r"(電子|投票|即可|可|不限|同意)", flags=re.IGNORECASE, na=False)]
 
     # 數據統計與顯示
     st.write(f"📊 共找到 **{len(filtered_df)}** 筆符合條件的股東會紀念品")
