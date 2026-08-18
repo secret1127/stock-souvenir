@@ -30,12 +30,24 @@ else:
     # 1. 文字關鍵字搜尋
     search_keyword = st.sidebar.text_input("搜尋股票代碼 / 名稱 / 紀念品", "")
 
-    # 2. 快捷勾選類別
+    # 2. 身分證件需求篩選 (正本 / 影本)
+    id_req_filter = st.sidebar.radio(
+        "身分證件需求",
+        ["不限", "需身分證正本", "需身分證影本"]
+    )
+
+    # 3. 快捷勾選類別
     st.sidebar.subheader("快捷類別篩選")
     filter_gift_card = st.sidebar.checkbox("便利商店 / 商品禮券 / 商品卡")
     filter_odd_lots = st.sidebar.checkbox("零股可領（電子投票即可）")
 
     filtered_df = df.copy()
+
+    # 身分證件需求過濾
+    if id_req_filter == "需身分證正本":
+        filtered_df = filtered_df[filtered_df["零股條件"].astype(str).str.contains(r"(正本|檢附正本|核對正本)", flags=re.IGNORECASE, na=False)]
+    elif id_req_filter == "需身分證影本":
+        filtered_df = filtered_df[filtered_df["零股條件"].astype(str).str.contains(r"(影本|印本|檢附影本)", flags=re.IGNORECASE, na=False)]
 
     # 關鍵字過濾
     if search_keyword:
@@ -45,9 +57,8 @@ else:
             filtered_df["紀念品"].astype(str).str.contains(search_keyword, case=False, na=False)
         ]
 
-    # 商品禮券 / 卡 過濾（超寬鬆匹配）
+    # 商品禮券 / 卡 過濾
     if filter_gift_card:
-        # 只要紀念品包含以下任何一個字（包含卡、券、7-11、全家、7-ELEVEN、全聯等）
         pattern = r"(禮券|商品卡|禮卡|7-11|7-Eleven|全家|超商|商品券|卡|券|全聯|莫凡彼|星巴克|提貨券)"
         filtered_df = filtered_df[filtered_df["紀念品"].astype(str).str.contains(pattern, flags=re.IGNORECASE, na=False)]
 
